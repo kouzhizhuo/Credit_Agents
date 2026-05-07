@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# System/IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Run artifacts
+outputs/
+logs/
+*.log
+
+# Local data/cache (large files not tracked)
+cache/
+.cache/
+*.csv
+*.parquet
+*.xlsx
+*.xls
+
+# Secrets/local config
+.env
+.env.*
+*.key
+*.pem
+local_config.py
