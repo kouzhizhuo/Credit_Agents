@@ -7,25 +7,27 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# System/IDE
+# 系统/IDE
 .DS_Store
 .idea/
 .vscode/
 
-# Run artifacts
+# 运行产物
 outputs/
 logs/
 *.log
 
-# Local data/cache (large files not tracked)
+# 本地数据/缓存（不随包上传）
+data/
 cache/
 .cache/
 *.csv
+*.jsonl
 *.parquet
 *.xlsx
 *.xls
 
-# Secrets/local config
+# 密钥/本地配置
 .env
 .env.*
 *.key

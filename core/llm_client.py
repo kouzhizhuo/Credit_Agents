@@ -1,11 +1,13 @@
-"""Thin wrapper around OpenAI-compatible chat API.
+"""core.llm_client: OpenAI/Chat 兼容接口的薄封装。
 
-No LLM / call failure → all methods return ``None`` or empty dict; callers
-fall back to rule-based logic.
+设计原则 (对齐 ``alphaevolve_agent/core/llm_client.py``):
+- 无 LLM / 调用失败 → 所有方法返回 ``None`` 或空 dict, 上层按规则兜底。
+- 结构化 JSON 解析容错: 复用 ``core.utils.safe_json_loads``。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
 from .utils import safe_json_loads
@@ -95,17 +97,67 @@ class LLMClient:
         temperature: Optional[float],
         max_tokens: Optional[int],
     ) -> Optional[str]:
+        resolved_temp = self.temperature if temperature is None else temperature
+        resolved_tokens = self.max_tokens if max_tokens is None else max_tokens
+        request_kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": resolved_temp,
+            "max_tokens": resolved_tokens,
+            "timeout": self.timeout,
+        }
         try:
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.temperature if temperature is None else temperature,
-                max_tokens=self.max_tokens if max_tokens is None else max_tokens,
-            )
-            return resp.choices[0].message.content or ""
+            # Qwen3 在 vLLM reasoning 模式下常把输出放在 `reasoning` 字段，
+            # 导致 `message.content` 为空；这里优先关闭 thinking，保证拿到可解析正文。
+            if self._should_disable_thinking():
+                request_kwargs["extra_body"] = {
+                    "chat_template_kwargs": {"enable_thinking": False}
+                }
+
+            resp = self.client.chat.completions.create(**request_kwargs)
+            content = self._extract_text_content(resp)
+            if content:
+                return content
+
+            # 兼容少数端点不接受 `chat_template_kwargs`，回退为原始请求重试一次
+            if "extra_body" in request_kwargs:
+                fallback_kwargs = dict(request_kwargs)
+                fallback_kwargs.pop("extra_body", None)
+                resp = self.client.chat.completions.create(**fallback_kwargs)
+                return self._extract_text_content(resp)
+            return ""
         except Exception as e:
             print(f"[LLMClient] 调用失败 (model={self.model}): {e}")
             return None
+
+    def _extract_text_content(self, resp: Any) -> str:
+        try:
+            msg = resp.choices[0].message
+        except Exception:
+            return ""
+        content = getattr(msg, "content", None)
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            out: List[str] = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        out.append(text)
+            return "\n".join(out).strip()
+        return ""
+
+    def _should_disable_thinking(self) -> bool:
+        model_name = (self.model or "").lower()
+        if "qwen" not in model_name:
+            return False
+        base = str(self.base_url or "")
+        try:
+            host = (urlparse(base).hostname or "").lower()
+        except Exception:
+            host = ""
+        return host in {"127.0.0.1", "0.0.0.0", "localhost"}
 
 
 # ---------------------------- 构造辅助 ---------------------------- #

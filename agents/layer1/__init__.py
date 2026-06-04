@@ -6,7 +6,7 @@
 - ``CoarseScreeningAgent``: ID/哈希/常量/重复列剔除。
 - ``FineGrainedSelectionAgent``: 迭代式 Pearson + XGBoost + LLM 语义相关性筛选。
 - ``LLMRelevanceAgent``: Rel_llm 评分。
-- ``LLMFinalJudgeAgent`` (新): 细粒度选择后用 LLM 做业务层最终判断，决定保留/剔除/警告。
+- ``LLMFinalJudgeAgent``: 细粒度选择后用 LLM 做业务层最终判断，决定保留/剔除/警告。
 - ``FinalValidationAgent``: 导出 CSV + 日志 JSON。
 """
 from .schema import CleaningLog, FeatureMetadata

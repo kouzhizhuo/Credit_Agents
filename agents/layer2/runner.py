@@ -1,7 +1,7 @@
 """Layer 2 · Runner
 
 串行驱动六个 DimensionAgent，按 ``can_access_global`` / ``depends_on`` 排序；
-同时支持可选的工具注册表与 LangChain ChatOpenAI 兼容模式 (兼容旧调用)。
+支持可选的工具注册表与 LangChain ChatOpenAI 适配模式。
 """
 from __future__ import annotations
 
@@ -75,11 +75,11 @@ def run_six_dimension_scoring(
     *,
     dim_texts: Dict[str, str],
     blackboard: Optional[SharedBlackboard] = None,
-    parallel: bool = False,  # 保留签名以兼容旧代码
+    parallel: bool = False,
 ) -> Dict[str, Any]:
     """执行六维度评估并聚合输出。
 
-    注：依赖顺序必须串行执行，``parallel`` 参数仅为向后兼容保留。
+    注：依赖顺序必须串行执行，``parallel`` 参数当前不生效。
     """
     bb = blackboard or SharedBlackboard()
     order = _topologically_ordered(agents)

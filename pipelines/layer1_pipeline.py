@@ -2,7 +2,7 @@
 
 顺序：
     DataCleaning → FeatureAnalysis → CoarseScreening → FineGrainedSelection
-    → LLMFinalJudge (新) → FinalValidation
+    → LLMFinalJudge → FinalValidation
 """
 from __future__ import annotations
 

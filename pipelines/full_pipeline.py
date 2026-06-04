@@ -18,7 +18,7 @@ from .layer3_pipeline import Layer3Pipeline, Layer3Result
 
 
 def _extract_dims_from_instruction(instruction_text: str) -> Dict[str, str]:
-    """轻依赖，把旧 ``utils.extract_dims_from_instruction`` 延迟导入。"""
+    """延迟导入 ``utils.extract_dims_from_instruction``，降低模块耦合。"""
     try:
         from utils import extract_dims_from_instruction  # type: ignore
 

@@ -1,4 +1,4 @@
-"""Abstract base class for all CreditAgent agents."""
+"""Agent 抽象基类（对齐 ``alphaevolve_agent/agents/base.py``）。"""
 from __future__ import annotations
 
 from typing import Any

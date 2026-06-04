@@ -1,4 +1,4 @@
-"""Layer 1 · LLMFinalJudgeAgent (新)
+"""Layer 1 · LLMFinalJudgeAgent
 
 在细粒度选择之后、最终导出之前，调用 LLM 对入围的候选特征做**业务层最终判断**：
 - 每个特征给出 ``verdict ∈ {keep, warn, drop}`` + 分数 (0-10) + 简短理由；
@@ -177,7 +177,7 @@ class LLMFinalJudgeAgent(BaseAgent):
         for name in batch:
             entry = obj.get(name)
             if not isinstance(entry, dict):
-                # 兼容 LLM 只返回分数而非对象
+                # 处理只返回分数而非结构化对象的响应
                 try:
                     score = float(entry)
                     entry = {

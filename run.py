@@ -1,4 +1,4 @@
-"""CreditAgent CLI entry point.
+"""CreditAgent 命令行入口（对齐 ``alphaevolve_agent/run.py`` 风格）。
 
 支持三种子命令：
 - ``layer1``   : 仅运行特征治理流水线 (CSV → 选定特征 CSV + 审计 JSON)
@@ -23,9 +23,13 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 import pandas as pd
+try:
+    from tqdm import tqdm
+except Exception:  # pragma: no cover
+    tqdm = None  # type: ignore
 
 
 def _ensure_project_on_path() -> None:
@@ -77,37 +81,61 @@ def _run_layer1(args: argparse.Namespace) -> None:
 
 
 # ---------------------------- Layer 2+3 ---------------------------- #
-def _load_jsonl(path: str) -> list:
-    out = []
+def _extract_ground_truth(raw: Dict[str, Any]) -> Any:
+    """支持多种标签字段命名。"""
+    if "simple_result" in raw:
+        return raw.get("simple_result")
+    if "ground_truth" in raw:
+        return raw.get("ground_truth")
+    if "groundtruth" in raw:
+        return raw.get("groundtruth")
+    return ""
+
+
+def _normalize_sample(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """把原始 JSONL 行压缩为 run_per_sample 所需的最小字段。"""
+    return {
+        "instruction": raw.get("instruction", ""),
+        "simple_result": _extract_ground_truth(raw),
+    }
+
+
+def _iter_normalized_samples(path: str, max_samples: Optional[int] = None) -> Iterable[Dict[str, Any]]:
+    """流式读取 JSONL，并删除本流程未使用的字段。"""
+    count = 0
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             s = line.strip()
             if not s:
                 continue
             try:
-                out.append(json.loads(s))
+                raw = json.loads(s)
             except Exception as e:
                 print(f"[run][WARN] 跳过非法 JSONL 行: {e}")
-    return out
-
-
-def _normalize_sample(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """把原始 JSONL 行转换成 FullPipeline.run_per_sample 期望的格式。"""
-    # 允许旧的 `ground_truth` / `simple_result` 兼容字段
-    sample: Dict[str, Any] = {
-        "instruction": raw.get("instruction", ""),
-        "simple_result": raw.get("simple_result", raw.get("ground_truth", "")),
-    }
-    return sample
+                continue
+            yield _normalize_sample(raw)
+            count += 1
+            if max_samples is not None and count >= max_samples:
+                break
 
 
 def _run_layer23(args: argparse.Namespace) -> None:
     cfg = _build_runtime(args)
     pipeline = FullPipeline(cfg, verbose=False)
-    if not args.input or not os.path.isfile(args.input):
-        print(f"[run] 缺少样本 JSONL: {args.input}")
+    input_path = args.input or cfg.scenario.default_input_file
+    if not input_path or not os.path.isfile(input_path):
+        print(f"[run] 缺少样本 JSONL: {input_path}")
         return
-    samples = _load_jsonl(args.input)
+    samples = list(
+        _iter_normalized_samples(
+            input_path,
+            max_samples=(
+                args.max_samples
+                if getattr(args, "max_samples", None) and args.max_samples > 0
+                else None
+            ),
+        )
+    )
     if not samples:
         print("[run] 样本为空")
         return
@@ -118,9 +146,21 @@ def _run_layer23(args: argparse.Namespace) -> None:
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     ok = fail = 0
-    print(f"[run] Layer2+3 开始，共 {len(samples)} 条")
+    print(f"[run] Layer2+3 开始，共 {len(samples)} 条 (input={input_path})")
+    iterable = samples
+    if tqdm is not None:
+        # 强制在非 TTY 输出（日志文件）中也打印进度信息
+        iterable = tqdm(
+            samples,
+            total=len(samples),
+            desc="layer2-3",
+            unit="sample",
+            disable=False,
+            file=sys.stdout,
+            mininterval=2.0,
+        )
     with open(output_path, "w", encoding="utf-8") as fout:
-        for i, raw in enumerate(samples, 1):
+        for i, raw in enumerate(iterable, 1):
             try:
                 res = pipeline.run_per_sample(_normalize_sample(raw))
                 fout.write(json.dumps(res, ensure_ascii=False) + "\n")
@@ -170,17 +210,29 @@ def parse_args() -> argparse.Namespace:
 
     # layer2-3
     p2 = sub.add_parser("layer2-3", help="运行 Layer 2 + Layer 3")
-    p2.add_argument("--input", type=str, required=True, help="JSONL 输入路径")
+    p2.add_argument(
+        "--input",
+        type=str,
+        default=None,
+        help="JSONL 输入路径（默认使用配置中的 benchmark 文件）",
+    )
     p2.add_argument("--output", type=str, default=None, help="JSONL 输出路径")
+    p2.add_argument("--max-samples", type=int, default=None, help="最多处理 N 条样本")
     _add_common_args(p2)
 
     # all
     p3 = sub.add_parser("all", help="Layer1 + Layer2-3 (需要同时指定 CSV / JSONL)")
     p3.add_argument("--layer1-input", type=str, required=True, help="Layer1 CSV")
     p3.add_argument("--target", type=str, default="target", help="Layer1 目标列名")
-    p3.add_argument("--samples", type=str, required=True, help="Layer2+3 JSONL")
+    p3.add_argument(
+        "--samples",
+        type=str,
+        default=None,
+        help="Layer2+3 JSONL（默认使用配置中的 benchmark 文件）",
+    )
     p3.add_argument("--output", type=str, default=None, help="Layer2+3 JSONL 输出")
     p3.add_argument("--nrows", type=int, default=None)
+    p3.add_argument("--max-samples", type=int, default=None, help="Layer2+3 最多处理 N 条")
     _add_common_args(p3)
 
     return parser.parse_args()
@@ -211,6 +263,7 @@ def main() -> None:
         a2 = _A()
         a2.input = args.samples
         a2.output = args.output
+        a2.max_samples = args.max_samples
         a2.threshold = args.threshold
         a2.margin = args.margin
         a2.disable_tools = args.disable_tools
